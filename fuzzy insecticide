@@ -1,0 +1,209 @@
+import math
+import matplotlib
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
+
+matplotlib.rcParams.update({'font.size': 18, 'font.family': 'serif'})
+
+def calculateParamU1(om1, om11, om12, u_min, beta_h, beta_v, alpha,mu_h):
+    u1 = 0
+    if om1 <= om11:
+        u1 = u_min
+    elif om11 <= om1 <= om12:
+        u1 = u_min + ((om1 - om11) / (om12 - om11)) * (beta_h * beta_v*(1-alpha)/mu_h)
+    elif om1 >= om12:
+        u1 = u_min + (beta_h * beta_v*(1-alpha)/mu_h)
+    return u1
+
+def calculateParamU2(om2, om21, om22, om23, om24, u2_min, II, beta_v, mu_v):
+    u2 = 0
+    if om2 <= om21 or om2 >= om24:
+        u2 = u2_min
+    elif om21 <= om2 <= om22:
+        u2 = u2_min + ((om2 - om21) / (om22 - om21)) * (II * beta_v * (1 - mu_v))
+    elif om22 <= om2 <= om23:
+        u2 = u2_min + (II * beta_v * (1 - mu_v))
+    elif om23 <= om2 <= om24:
+        u2 = u2_min + (II * beta_v * (1 - mu_v)) + ((om2 - om23) / (om23 - om24)) * (II * beta_v * (1 - mu_v))
+    return u2
+
+def model(t, y, A, beta_h, mu_h, alpha, II, beta_v, mu_v, u1, u2):
+    S_h, I_h, R_h, S_v, I_v = y
+    dS_hdt = A - beta_h * S_h * I_v - mu_h * S_h
+    dI_hdt = beta_h * S_h * I_v - (u1 + alpha + mu_h) * I_h
+    dR_hdt = alpha * I_h - mu_h * R_h
+    dS_vdt = II - beta_v * S_v * I_h - (u2 + mu_v) * S_v
+    dI_vdt = beta_v * S_v * I_h - (u2 + mu_v) * I_v
+    return [dS_hdt, dI_hdt, dR_hdt, dS_vdt, dI_vdt]
+
+def rungeKutta(S_h0, I_h0, R_h0, S_v0, I_v0, T0, T, times, param):
+    result = solve_ivp(fun=model, t_span=[T0, T], y0=[S_h0, I_h0, R_h0, S_v0, I_v0], args=param, method='RK45', t_eval=times)
+    resS_h = result.y[0]
+    resI_h = result.y[1]
+    resR_h = result.y[2]
+    resS_v = result.y[3]
+    resI_v = result.y[4]
+    return [resS_h, resI_h, resR_h, resS_v, resI_v]
+
+def plotRK(times, results, suptitle):
+    labels = ["S_h", "I_h", "R_h", "S_v", "I_v"]
+    linestyles = ['-', '--', '-.', ':', (0, (3, 5, 1, 5))]  # Different line styles
+
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))  # Changed to 2 rows and 3 columns
+    axes = axes.flatten()
+
+    for i in range(5):
+        for j, result in enumerate(results):
+            axes[i].plot(times, result[i], linestyle=linestyles[j % len(linestyles)], linewidth=2, label=f"Ex. {j+1}")
+        axes[i].set_xlabel("Time (Day)")
+        axes[i].set_ylabel("Population Number")
+        axes[i].set_title(f"{labels[i]}")
+        axes[i].grid()
+        axes[i].legend()
+
+    fig.suptitle(f"Simulasi {suptitle}", fontsize=20)
+    
+    # Remove the sixth subplot (bottom right corner)
+    fig.delaxes(axes[5])
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])  # Adjust layout to make room for the suptitle
+    plt.show()
+
+def exportCSV(times, points):
+    arr = np.array([times, points[0], points[1], points[2], points[3], points[4]])
+    pd.DataFrame(arr).to_csv('sample.csv')
+
+def main():
+    # Get user input for the suptitle
+    suptitle = input("Enter the title of Simulations [ A | B | C | D | E ]: ")
+    
+    # Get user input for number of test
+    num_test = int(input("Enter the number of test: "))
+
+    # Define constants
+    A = 1
+    beta_h = 0.008
+    mu_h = 0.033
+    alpha = 0.6
+    II = 1
+    beta_v = 0.008
+    mu_v = 0.12
+
+    u1 = 0
+
+    # Initial populations
+    S_h0 = 75
+    I_h0 = 50
+    R_h0 = 0
+    S_v0 = 50
+    I_v0 = 10
+
+    # Steps
+    T0 = 0
+    T = 20   # Shorter total time for zoomed-in view
+    deltaT = 0.01  # Smaller time step for higher resolution
+    times = np.arange(T0, T, deltaT)
+
+    results = []
+
+    u2_min = float(input("Enter u2_min: "))
+
+    if suptitle == "A":
+        om21 = float(input("Enter om21 (same for all test): "))
+        om22 = float(input("Enter om22 (same for all test): "))
+        om23 = float(input("Enter om23 (same for all test): "))
+        om24 = float(input("Enter om24 (same for all test): "))
+
+        for i in range(num_test):
+            print(f"Test {i + 1}:")
+            om2 = float(input("Enter om2: "))
+
+            u2 = calculateParamU2(om2, om21, om22, om23, om24, u2_min, II, beta_v, mu_v)
+            print(f"Calculated u2 for test {i + 1}: {u2}")
+
+            param = (A, beta_h, mu_h, alpha, II, beta_v, mu_v, u1, u2)
+            rungeKuttaVal = rungeKutta(S_h0, I_h0, R_h0, S_v0, I_v0, T0, T, times, param)
+            results.append(rungeKuttaVal)
+
+            # Debug output
+            # print(f"First few S_h values for test {i + 1}: {rungeKuttaVal[0][:5]}")
+            # print(f"First few I_h values for test {i + 1}: {rungeKuttaVal[1][:5]}")
+            # print(f"First few R_h values for test {i + 1}: {rungeKuttaVal[2][:5]}")
+            # print(f"First few S_v values for test {i + 1}: {rungeKuttaVal[3][:5]}")
+            # print(f"First few I_v values for test {i + 1}: {rungeKuttaVal[4][:5]}")
+    
+    elif suptitle == "B":
+        om2 = float(input("Enter om2 (same for all test): "))
+        om22 = float(input("Enter om22 (same for all test): "))
+        om23 = float(input("Enter om23 (same for all test): "))
+        om24 = float(input("Enter om24 (same for all test): "))
+
+        for i in range(num_test):
+            print(f"Test {i + 1}:")
+            om21 = float(input("Enter om21: "))
+
+            u2 = calculateParamU2(om2, om21, om22, om23, om24, u2_min, II, beta_v, mu_h)
+            print(f"Calculated u2 for test {i + 1}: {u2}")
+
+            param = (A, beta_h, mu_h, alpha, II, beta_v, mu_v, u1, u2)
+            rungeKuttaVal = rungeKutta(S_h0, I_h0, R_h0, S_v0, I_v0, T0, T, times, param)
+            results.append(rungeKuttaVal)
+
+    elif suptitle == "C":
+        om2 = float(input("Enter om2 (same for all test): "))
+        om21 = float(input("Enter om21 (same for all test): "))
+        om23 = float(input("Enter om23 (same for all test): "))
+        om24 = float(input("Enter om24 (same for all test): "))
+
+        for i in range(num_test):
+            print(f"Test {i + 1}:")
+            om22 = float(input("Enter om22: "))
+
+            u2 = calculateParamU2(om2, om21, om22, om23, om24, u2_min, II, beta_v, mu_h)
+            print(f"Calculated u2 for test {i + 1}: {u2}")
+
+            param = (A, beta_h, mu_h, alpha, II, beta_v, mu_v, u1, u2)
+            rungeKuttaVal = rungeKutta(S_h0, I_h0, R_h0, S_v0, I_v0, T0, T, times, param)
+            results.append(rungeKuttaVal)
+
+    elif suptitle == "D":
+        om2 = float(input("Enter om2 (same for all test): "))
+        om21 = float(input("Enter om21 (same for all test): "))
+        om22 = float(input("Enter om22 (same for all test): "))
+        om24 = float(input("Enter om24 (same for all test): "))
+
+        for i in range(num_test):
+            print(f"Test {i + 1}:")
+            om23 = float(input("Enter om23: "))
+
+            u2 = calculateParamU2(om2, om21, om22, om23, om24, u2_min, II, beta_v, mu_h)
+            print(f"Calculated u2 for test {i + 1}: {u2}")
+
+            param = (A, beta_h, mu_h, alpha, II, beta_v, mu_v, u1, u2)
+            rungeKuttaVal = rungeKutta(S_h0, I_h0, R_h0, S_v0, I_v0, T0, T, times, param)
+            results.append(rungeKuttaVal)
+        
+    elif suptitle == "E":
+        om2 = float(input("Enter om2 (same for all test): "))
+        om21 = float(input("Enter om21 (same for all test): "))
+        om22 = float(input("Enter om22 (same for all test): "))
+        om23 = float(input("Enter om23 (same for all test): "))
+
+        for i in range(num_test):
+            print(f"Test {i + 1}:")
+            om24 = float(input("Enter om24: "))
+
+            u2 = calculateParamU2(om2, om21, om22, om23, om24, u2_min, II, beta_v, mu_h)
+            print(f"Calculated u2 for test {i + 1}: {u2}")
+
+            param = (A, beta_h, mu_h, alpha, II, beta_v, mu_v, u1, u2)
+            rungeKuttaVal = rungeKutta(S_h0, I_h0, R_h0, S_v0, I_v0, T0, T, times, param)
+            results.append(rungeKuttaVal)
+
+    plotRK(times, results, suptitle)
+
+if __name__ == "__main__":
+    
+    main()
